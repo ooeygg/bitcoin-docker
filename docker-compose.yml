@@ -19,7 +19,7 @@ services:
       - BITCOIN_RPC_USER=${BITCOIN_RPC_USER:-bitcoinrpc}
       - BITCOIN_RPC_PASSWORD=${BITCOIN_RPC_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK:-mainnet}
-    user: "1000:1000"  # Run as non-root user to avoid permission issues
+    # user: "1000:1000"  # Commented out to avoid permission issues
     command: [
       "bitcoind", 
       "-datadir=/data", 
@@ -78,7 +78,7 @@ services:
       - ELECTRS_MONITORING_ADDR=0.0.0.0:4224
       - ELECTRS_VERBOSITY=${ELECTRS_VERBOSITY:-2}
       - ELECTRS_NETWORK=${BITCOIN_NETWORK:-mainnet}
-    user: "1000:1000"  # Run as non-root user
+    # user: "1000:1000"  # Commented out to avoid permission issues
     depends_on:
       bitcoin:
         condition: service_healthy
@@ -107,11 +107,7 @@ services:
 networks:
   bitcoin-network:
     driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.25.0.0/16
-          gateway: 172.25.0.1
+    # Automatic IP assignment to avoid conflicts
     driver_opts:
       com.docker.network.bridge.name: bitcoin-br0
 

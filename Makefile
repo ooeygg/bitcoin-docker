@@ -137,32 +137,63 @@ bitcoin-cli: ## Run bitcoin-cli command (usage: make bitcoin-cli ARGS="-getinfo"
 		echo "$(RED)❌ Please provide ARGS. Example: make bitcoin-cli ARGS=\"-getinfo\"$(NC)"; \
 		exit 1; \
 	fi
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data $(ARGS)
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD $(ARGS); \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+		exit 1; \
+	fi
 
 bitcoin-info: ## Get comprehensive Bitcoin node information
 	@echo "$(BLUE)📊 Bitcoin Core Node Information:$(NC)"
 	@echo "$(CYAN)================================$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data -getinfo
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD -getinfo; \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
 
 bitcoin-status: ## Get detailed blockchain status
 	@echo "$(BLUE)⛓️  Blockchain Status:$(NC)"
 	@echo "$(CYAN)==================$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data getblockchaininfo
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD getblockchaininfo; \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
 
 bitcoin-peers: ## Show connected peers
 	@echo "$(BLUE)🌐 Connected Peers:$(NC)"
 	@echo "$(CYAN)=================$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data getpeerinfo | grep -E '"addr"|"version"|"subver"' | head -20
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD getpeerinfo | grep -E '"addr"|"version"|"subver"' | head -20; \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
 
 bitcoin-mempool: ## Show mempool information
 	@echo "$(BLUE)💾 Mempool Information:$(NC)"
 	@echo "$(CYAN)=====================$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data getmempoolinfo
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD getmempoolinfo; \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
 
 bitcoin-wallet-info: ## Show wallet information (if wallet exists)
 	@echo "$(BLUE)💰 Wallet Information:$(NC)"
 	@echo "$(CYAN)=====================$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data getwalletinfo || echo "$(YELLOW)⚠️  No wallet loaded$(NC)"
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD getwalletinfo || echo "$(YELLOW)⚠️  No wallet loaded$(NC)"; \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
 
 create-wallet: ## Create a new wallet (usage: make create-wallet WALLET=mywallet)
 	@if [ -z "$(WALLET)" ]; then \
@@ -170,33 +201,30 @@ create-wallet: ## Create a new wallet (usage: make create-wallet WALLET=mywallet
 		exit 1; \
 	fi
 	@echo "$(BLUE)💰 Creating wallet: $(WALLET)$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data createwallet $(WALLET)
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD createwallet $(WALLET); \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
 
 # =============================================================================
 # STATUS AND HEALTH MONITORING
 # =============================================================================
 
-status: ## Show detailed status of all services
-	@echo "$(BLUE)📊 Service Status:$(NC)"
-	@echo "$(CYAN)=================$(NC)"
-	docker-compose ps
-	@echo ""
-	@echo "$(BLUE)🌐 Network Information:$(NC)"
-	@echo "$(CYAN)=====================$(NC)"
-	docker network ls | grep bitcoin || echo "$(YELLOW)⚠️  No bitcoin networks found$(NC)"
-	@echo ""
-	@echo "$(BLUE)💾 Volume Information:$(NC)"
-	@echo "$(CYAN)=====================$(NC)"
-	docker volume ls | grep bitcoin || echo "$(YELLOW)⚠️  No bitcoin volumes found$(NC)"
-
 health: ## Comprehensive health check of all services
 	@echo "$(BLUE)🏥 Health Check:$(NC)"
 	@echo "$(CYAN)===============$(NC)"
 	@echo "$(YELLOW)🔍 Checking Bitcoin Core...$(NC)"
-	@if docker-compose exec bitcoin bitcoin-cli -datadir=/data -getinfo >/dev/null 2>&1; then \
-		echo "$(GREEN)✅ Bitcoin Core: Healthy$(NC)"; \
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		if docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD -getinfo >/dev/null 2>&1; then \
+			echo "$(GREEN)✅ Bitcoin Core: Healthy$(NC)"; \
+		else \
+			echo "$(RED)❌ Bitcoin Core: Unhealthy$(NC)"; \
+		fi; \
 	else \
-		echo "$(RED)❌ Bitcoin Core: Unhealthy$(NC)"; \
+		echo "$(RED)❌ .env file not found$(NC)"; \
 	fi
 	@echo "$(YELLOW)🔍 Checking Electrum Server...$(NC)"
 	@if docker-compose exec electrs curl -s http://localhost:4224/metrics >/dev/null 2>&1; then \
@@ -205,16 +233,16 @@ health: ## Comprehensive health check of all services
 		echo "$(RED)❌ Electrum Server: Unhealthy$(NC)"; \
 	fi
 
-resources: ## Show resource usage of containers
-	@echo "$(BLUE)📈 Resource Usage:$(NC)"
-	@echo "$(CYAN)==================$(NC)"
-	docker stats bitcoin-core electrum-server --no-stream --format "table {{.Container}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}"
-
 memory-usage: ## Show detailed memory usage
 	@echo "$(BLUE)💾 Memory Usage Details:$(NC)"
 	@echo "$(CYAN)========================$(NC)"
 	@echo "$(YELLOW)Bitcoin Core Memory:$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data getmemoryinfo || echo "$(RED)❌ Bitcoin Core not responding$(NC)"
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD getmemoryinfo || echo "$(RED)❌ Bitcoin Core not responding$(NC)"; \
+	else \
+		echo "$(RED)❌ .env file not found$(NC)"; \
+	fi
 	@echo ""
 	@echo "$(YELLOW)Electrum Server Metrics:$(NC)"
 	docker-compose exec electrs curl -s http://localhost:4224/metrics | grep memory || echo "$(RED)❌ Electrum Server not responding$(NC)"
@@ -223,19 +251,19 @@ memory-usage: ## Show detailed memory usage
 # DEVELOPMENT AND TESTING
 # =============================================================================
 
-dev: build-all up ## Quick development setup (build + start + status)
-	@echo "$(GREEN)🚀 Development environment ready!$(NC)"
-	@sleep 5
-	@make status
-
 test: ## Run comprehensive connectivity and functionality tests
 	@echo "$(BLUE)🧪 Running Tests:$(NC)"
 	@echo "$(CYAN)=================$(NC)"
 	@echo "$(YELLOW)🔍 Testing Bitcoin Core connectivity...$(NC)"
-	@if docker-compose exec bitcoin bitcoin-cli -datadir=/data -getinfo >/dev/null 2>&1; then \
-		echo "$(GREEN)✅ Bitcoin Core: Connected and responding$(NC)"; \
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		if docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD -getinfo >/dev/null 2>&1; then \
+			echo "$(GREEN)✅ Bitcoin Core: Connected and responding$(NC)"; \
+		else \
+			echo "$(RED)❌ Bitcoin Core: Not responding$(NC)"; \
+		fi; \
 	else \
-		echo "$(RED)❌ Bitcoin Core: Not responding$(NC)"; \
+		echo "$(RED)❌ .env file not found$(NC)"; \
 	fi
 	@echo "$(YELLOW)🔍 Testing Electrum Server connectivity...$(NC)"
 	@if docker-compose exec electrs curl -s http://localhost:4224/metrics >/dev/null 2>&1; then \
@@ -253,14 +281,72 @@ test: ## Run comprehensive connectivity and functionality tests
 test-rpc: ## Test Bitcoin RPC with sample commands
 	@echo "$(BLUE)🔌 Testing Bitcoin RPC:$(NC)"
 	@echo "$(CYAN)=======================$(NC)"
-	@echo "$(YELLOW)Node Info:$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data -getinfo
-	@echo ""
-	@echo "$(YELLOW)Block Count:$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data getblockcount
-	@echo ""
-	@echo "$(YELLOW)Connection Count:$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data getconnectioncount
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		echo "$(YELLOW)Node Info:$(NC)" && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD -getinfo && \
+		echo "" && \
+		echo "$(YELLOW)Block Count:$(NC)" && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD getblockcount && \
+		echo "" && \
+		echo "$(YELLOW)Connection Count:$(NC)" && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD getconnectioncount; \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
+
+# =============================================================================
+# WALLET OPERATIONS
+# =============================================================================
+
+list-wallets: ## List all available wallets
+	@echo "$(BLUE)💰 Available Wallets:$(NC)"
+	@echo "$(CYAN)===================$(NC)"
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD listwallets || echo "$(YELLOW)⚠️  No wallets available$(NC)"; \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
+
+load-wallet: ## Load a wallet (usage: make load-wallet WALLET=mywallet)
+	@if [ -z "$(WALLET)" ]; then \
+		echo "$(RED)❌ Please provide WALLET name. Example: make load-wallet WALLET=mywallet$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)💰 Loading wallet: $(WALLET)$(NC)"
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD loadwallet $(WALLET); \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
+
+unload-wallet: ## Unload a wallet (usage: make unload-wallet WALLET=mywallet)
+	@if [ -z "$(WALLET)" ]; then \
+		echo "$(RED)❌ Please provide WALLET name. Example: make unload-wallet WALLET=mywallet$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)💰 Unloading wallet: $(WALLET)$(NC)"
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD unloadwallet $(WALLET); \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
+
+new-address: ## Generate new receiving address (usage: make new-address WALLET=mywallet)
+	@if [ -z "$(WALLET)" ]; then \
+		echo "$(RED)❌ Please provide WALLET name. Example: make new-address WALLET=mywallet$(NC)"; \
+		exit 1; \
+	fi
+	@echo "$(BLUE)💰 Generating new address for wallet: $(WALLET)$(NC)"
+	@if [ -f .env ]; then \
+		export $$(grep -E '^BITCOIN_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcuser=$$BITCOIN_RPC_USER -rpcpassword=$$BITCOIN_RPC_PASSWORD -rpcwallet=$(WALLET) getnewaddress; \
+	else \
+		echo "$(RED)❌ .env file not found. Run 'make init' first.$(NC)"; \
+	fi
 
 # =============================================================================
 # CLEANUP AND MAINTENANCE
@@ -514,39 +600,6 @@ electrs-sync: ## Show Electrum Server sync progress
 	@echo "$(BLUE)🔄 Electrum Server Sync Progress:$(NC)"
 	@echo "$(CYAN)================================$NC)"
 	docker-compose exec electrs curl -s http://localhost:4224/metrics | grep -E "(electrs_index|electrs_db)" || echo "$(RED)❌ Sync info not available$(NC)"
-
-# =============================================================================
-# WALLET OPERATIONS
-# =============================================================================
-
-list-wallets: ## List all available wallets
-	@echo "$(BLUE)💰 Available Wallets:$(NC)"
-	@echo "$(CYAN)===================$NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data listwallets || echo "$(YELLOW)⚠️  No wallets available$(NC)"
-
-load-wallet: ## Load a wallet (usage: make load-wallet WALLET=mywallet)
-	@if [ -z "$(WALLET)" ]; then \
-		echo "$(RED)❌ Please provide WALLET name. Example: make load-wallet WALLET=mywallet$(NC)"; \
-		exit 1; \
-	fi
-	@echo "$(BLUE)💰 Loading wallet: $(WALLET)$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data loadwallet $(WALLET)
-
-unload-wallet: ## Unload a wallet (usage: make unload-wallet WALLET=mywallet)
-	@if [ -z "$(WALLET)" ]; then \
-		echo "$(RED)❌ Please provide WALLET name. Example: make unload-wallet WALLET=mywallet$(NC)"; \
-		exit 1; \
-	fi
-	@echo "$(BLUE)💰 Unloading wallet: $(WALLET)$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data unloadwallet $(WALLET)
-
-new-address: ## Generate new receiving address (usage: make new-address WALLET=mywallet)
-	@if [ -z "$(WALLET)" ]; then \
-		echo "$(RED)❌ Please provide WALLET name. Example: make new-address WALLET=mywallet$(NC)"; \
-		exit 1; \
-	fi
-	@echo "$(BLUE)💰 Generating new address for wallet: $(WALLET)$(NC)"
-	docker-compose exec bitcoin bitcoin-cli -datadir=/data -rpcwallet=$(WALLET) getnewaddress
 
 # =============================================================================
 # SECURITY AND MAINTENANCE

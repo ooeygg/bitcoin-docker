@@ -1,5 +1,34 @@
 # Ignore all environment files (except templates).
-/.env*
-!/.env*.erb
-!.env.test
-!.env*.example
+.env
+.env.local
+.env.production
+
+# Bitcoin blockchain data (too large for git)
+bitcoin/data/
+electrs/data/
+
+# Docker volumes and temporary files
+**/data/
+docker-compose.override.yml
+
+# Backup files
+*.backup
+*.bak
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.temp
