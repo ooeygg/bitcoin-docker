@@ -40,7 +40,11 @@ init: check-deps ## Initialize project (create directories, .env, check requirem
 	@echo "$(GREEN)🔧 Initializing Bitcoin Docker project...$(NC)"
 	@echo "$(BLUE)Creating required directories...$(NC)"
 	@mkdir -p bitcoin/data electrs/data
-	@chmod 755 bitcoin/data electrs/data
+	@chmod 755 bitcoin/data electrs/data 2>/dev/null || { \
+		echo "$(YELLOW)⚠️  Permission issue detected. Attempting to fix...$(NC)"; \
+		sudo chown -R $(shell whoami):$(shell whoami) bitcoin/data electrs/data 2>/dev/null || true; \
+		chmod 755 bitcoin/data electrs/data 2>/dev/null || true; \
+	}
 	@if [ ! -f .env ]; then \
 		echo "$(YELLOW)⚠️  Creating .env from .env.example...$(NC)"; \
 		cp .env.example .env; \

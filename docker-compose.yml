@@ -19,20 +19,23 @@ services:
       - BITCOIN_RPC_USER=${BITCOIN_RPC_USER:-bitcoinrpc}
       - BITCOIN_RPC_PASSWORD=${BITCOIN_RPC_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK:-mainnet}
+    user: "1000:1000"  # Run as non-root user to avoid permission issues
     command: [
       "bitcoind", 
       "-datadir=/data", 
       "-printtoconsole", 
       "-server=1",
       "-rpcuser=${BITCOIN_RPC_USER:-bitcoinrpc}",
-      "-rpcpassword=${BITCOIN_RPC_PASSWORD}"
+      "-rpcpassword=${BITCOIN_RPC_PASSWORD}",
+      "-rpcallowip=0.0.0.0/0",
+      "-rpcbind=0.0.0.0:8332"
     ]
     healthcheck:
       test: ["CMD", "bitcoin-cli", "-datadir=/data", "-rpcuser=${BITCOIN_RPC_USER:-bitcoinrpc}", "-rpcpassword=${BITCOIN_RPC_PASSWORD}", "-getinfo"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      timeout: 15s
+      retries: 10
+      start_period: 120s  # Give more time for initial startup
     networks:
       - bitcoin-network
     logging:
@@ -43,9 +46,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${BITCOIN_MEMORY_LIMIT:-8g}
+          memory: ${BITCOIN_MEMORY_LIMIT:-16g}
+          cpus: '${BITCOIN_CPU_LIMIT:-4.0}'
         reservations:
-          memory: 2g
+          memory: 4g
+          cpus: '2.0'
 
   electrs:
     build:
@@ -72,15 +77,17 @@ services:
       - ELECTRS_ELECTRUM_RPC_ADDR=0.0.0.0:50001
       - ELECTRS_MONITORING_ADDR=0.0.0.0:4224
       - ELECTRS_VERBOSITY=${ELECTRS_VERBOSITY:-2}
+      - ELECTRS_NETWORK=${BITCOIN_NETWORK:-mainnet}
+    user: "1000:1000"  # Run as non-root user
     depends_on:
       bitcoin:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4224/metrics"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
+      timeout: 15s
+      retries: 10
+      start_period: 180s  # Electrs takes longer to start
     networks:
       - bitcoin-network
     logging:
@@ -91,14 +98,22 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${ELECTRS_MEMORY_LIMIT:-4g}
+          memory: ${ELECTRS_MEMORY_LIMIT:-8g}
+          cpus: '${ELECTRS_CPU_LIMIT:-2.0}'
         reservations:
-          memory: 1g
+          memory: 2g
+          cpus: '1.0'
 
 networks:
   bitcoin-network:
     driver: bridge
-    # Let Docker automatically assign IP range to avoid conflicts
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.25.0.0/16
+          gateway: 172.25.0.1
+    driver_opts:
+      com.docker.network.bridge.name: bitcoin-br0
 
 volumes:
   bitcoin-data:
@@ -107,19 +122,10 @@ volumes:
       type: none
       o: bind
       device: ${PWD}/bitcoin/data
+  
   electrs-data:
     driver: local
     driver_opts:
       type: none
       o: bind
       device: ${PWD}/electrs/data
-
-# Environment configuration
-# Create a .env file in the root directory with the following variables:
-# BITCOIN_NETWORK=mainnet
-# BITCOIN_RPC_USER=bitcoinrpc
-# BITCOIN_RPC_PASSWORD=your-secure-password
-# BITCOIN_MEMORY_LIMIT=8g
-# ELECTRS_MEMORY_LIMIT=4g
-# ELECTRS_LOG_LEVEL=INFO
-# ELECTRS_VERBOSITY=2
