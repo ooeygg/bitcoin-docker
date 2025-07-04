@@ -1,0 +1,124 @@
+version: '3.8'
+
+services:
+  bitcoin:
+    build:
+      context: ./bitcoin/docker
+      dockerfile: Dockerfile
+    image: bitcoin:latest
+    container_name: bitcoin-core
+    restart: unless-stopped
+    ports:
+      - "8332:8332"   # RPC port
+      - "8333:8333"   # P2P port
+      - "18332:18332" # Testnet RPC port
+      - "18333:18333" # Testnet P2P port
+    volumes:
+      - bitcoin-data:/data
+      - ./bitcoin/bitcoin.conf:/data/bitcoin.conf:ro
+    environment:
+      - BITCOIN_DATA=/data
+    command: ["bitcoind", "-datadir=/data", "-printtoconsole", "-server=1"]
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-datadir=/data", "-getinfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - bitcoin-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  electrs:
+    build:
+      context: ./electrs
+      dockerfile: Dockerfile
+    image: electrs:latest
+    container_name: electrum-server
+    restart: unless-stopped
+    ports:
+      - "50001:50001"  # Electrum protocol port
+      - "4224:4224"    # Monitoring port
+    volumes:
+      - electrs-data:/data
+      - bitcoin-data:/bitcoin-ro:ro
+    environment:
+      - RUST_BACKTRACE=1
+      - ELECTRS_LOG_LEVEL=INFO
+      - ELECTRS_DB_DIR=/data
+      - ELECTRS_DAEMON_DIR=/bitcoin-ro
+      - ELECTRS_DAEMON_P2P_ADDR=bitcoin:8333
+      - ELECTRS_DAEMON_RPC_ADDR=bitcoin:8332
+      - ELECTRS_ELECTRUM_RPC_ADDR=0.0.0.0:50001
+      - ELECTRS_MONITORING_ADDR=0.0.0.0:4224
+      - ELECTRS_VERBOSITY=2
+    depends_on:
+      bitcoin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4224/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - bitcoin-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # Optional: Bitcoin Core GUI (uncomment if needed)
+  # bitcoin-gui:
+  #   build:
+  #     context: ./bitcoin/docker
+  #     dockerfile: Dockerfile
+  #   image: bitcoin:latest
+  #   container_name: bitcoin-gui
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5900:5900"  # VNC port
+  #   volumes:
+  #     - bitcoin-data:/data
+  #   environment:
+  #     - DISPLAY=:0
+  #   command: ["bitcoin-qt", "-datadir=/data"]
+  #   depends_on:
+  #     - bitcoin
+  #   networks:
+  #     - bitcoin-network
+
+networks:
+  bitcoin-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  bitcoin-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/bitcoin/data
+  electrs-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/electrs/data
+
+# Environment configuration
+# Create a .env file in the root directory with the following variables:
+# BITCOIN_NETWORK=mainnet
+# BITCOIN_RPC_USER=bitcoinrpc
+# BITCOIN_RPC_PASSWORD=your-secure-password
+# BITCOIN_PRUNE=0
+# ELECTRS_LOG_LEVEL=INFO
