@@ -52,57 +52,36 @@ services:
           memory: 4g
           cpus: '2.0'
 
-  electrs:
+  fractal-bitcoin:
     build:
-      context: ./electrs
+      context: ./fractal-bitcoin/docker
       dockerfile: Dockerfile
-    image: electrs:latest
-    container_name: electrum-server
+    image: fractal-bitcoin:latest
+    container_name: fractal-bitcoin-core
     restart: unless-stopped
     ports:
-      - "50001:50001"  # Electrum protocol port
-      - "4224:4224"    # Monitoring port
+      - "8434:8434"   # Fractal RPC port
+      - "8435:8435"   # Fractal P2P port
     volumes:
-      - electrs-data:/data
-      - bitcoin-data:/bitcoin-ro:ro
+      - fractal-data:/data
+      - ./fractal-bitcoin/fractal.conf:/data/fractal.conf:ro
     environment:
-      - RUST_BACKTRACE=1
-      - ELECTRS_LOG_LEVEL=${ELECTRS_LOG_LEVEL:-INFO}
-      - ELECTRS_DB_DIR=/data
-      - ELECTRS_DAEMON_DIR=/bitcoin-ro
-      - ELECTRS_DAEMON_P2P_ADDR=bitcoin:8333
-      - ELECTRS_DAEMON_RPC_ADDR=bitcoin:8332
-      - ELECTRS_DAEMON_RPC_USER=${BITCOIN_RPC_USER:-bitcoinrpc}
-      - ELECTRS_DAEMON_RPC_PASS=${BITCOIN_RPC_PASSWORD}
-      - ELECTRS_ELECTRUM_RPC_ADDR=0.0.0.0:50001
-      - ELECTRS_MONITORING_ADDR=0.0.0.0:4224
-      - ELECTRS_VERBOSITY=${ELECTRS_VERBOSITY:-2}
-      - ELECTRS_NETWORK=${BITCOIN_NETWORK:-mainnet}
-    # user: "1000:1000"  # Commented out to avoid permission issues
-    depends_on:
-      bitcoin:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4224/metrics"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 180s  # Electrs takes longer to start
+      - FRACTAL_DATA=/data
+      - FRACTAL_RPC_USER=${FRACTAL_RPC_USER:-fractalrpc}
+      - FRACTAL_RPC_PASSWORD=${FRACTAL_RPC_PASSWORD}
+    command: [
+      "bitcoind",
+      "-datadir=/data",
+      "-printtoconsole",
+      "-server=1",
+      "-rpcuser=${FRACTAL_RPC_USER:-fractalrpc}",
+      "-rpcpassword=${FRACTAL_RPC_PASSWORD}",
+      "-rpcallowip=0.0.0.0/0",
+      "-rpcbind=0.0.0.0:8434",
+      "-port=8435"
+    ]
     networks:
       - bitcoin-network
-    logging:
-      driver: json-file
-      options:
-        max-size: "100m"
-        max-file: "3"
-    deploy:
-      resources:
-        limits:
-          memory: ${ELECTRS_MEMORY_LIMIT:-8g}
-          cpus: '${ELECTRS_CPU_LIMIT:-2.0}'
-        reservations:
-          memory: 2g
-          cpus: '1.0'
 
 networks:
   bitcoin-network:
@@ -118,10 +97,10 @@ volumes:
       type: none
       o: bind
       device: ${PWD}/bitcoin/data
-  
-  electrs-data:
+
+  fractal-data:
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: ${PWD}/electrs/data
+      device: ${PWD}/fractal-bitcoin/data

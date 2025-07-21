@@ -82,6 +82,32 @@ build-all: build-bitcoin build-electrs ## Build all Docker images
 rebuild: clean-images build-all ## Force rebuild all images from scratch
 	@echo "$(GREEN)✅ All images rebuilt from scratch$(NC)"
 
+build-fractal: ## Build Fractal Bitcoin Docker image
+	@echo "$(BLUE)🔨 Building Fractal Bitcoin image...$(NC)"
+	docker build -t fractal-bitcoin fractal-bitcoin/docker/
+	@echo "$(GREEN)✅ Fractal Bitcoin image built successfully$(NC)"
+
+build-all: build-bitcoin build-electrs build-fractal ## Build all images
+
+fractal-cli: ## Run fractal bitcoin-cli command
+	@if [ -z "$(ARGS)" ]; then \
+		echo "$(RED)❌ Please provide ARGS. Example: make fractal-cli ARGS=\"-getinfo\"$(NC)"; \
+		exit 1; \
+	fi
+	@if [ -f .env ]; then \
+		export $$(grep -E '^FRACTAL_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec fractal-bitcoin bitcoin-cli -datadir=/data -rpcuser=$$FRACTAL_RPC_USER -rpcpassword=$$FRACTAL_RPC_PASSWORD $(ARGS); \
+	fi
+
+fractal-info: ## Get Fractal Bitcoin node information
+	@echo "$(BLUE)📊 Fractal Bitcoin Node Information:$(NC)"
+	@if [ -f .env ]; then \
+		export $$(grep -E '^FRACTAL_RPC_(USER|PASSWORD)=' .env | xargs) && \
+		docker-compose exec fractal-bitcoin bitcoin-cli -datadir=/data -rpcuser=$$FRACTAL_RPC_USER -rpcpassword=$$FRACTAL_RPC_PASSWORD -getinfo; \
+	fi
+
+dual-info: bitcoin-info fractal-info
+
 # =============================================================================
 # SERVICE ORCHESTRATION
 # =============================================================================
