@@ -1,4 +1,7 @@
 services:
+  # =========================
+  # Bitcoin Core (Full Node)
+  # =========================
   bitcoin:
     build:
       context: ./bitcoin/docker
@@ -7,10 +10,10 @@ services:
     container_name: bitcoin-core
     restart: unless-stopped
     ports:
-      - "8332:8332"   # RPC port
-      - "8333:8333"   # P2P port
-      - "18332:18332" # Testnet RPC port
-      - "18333:18333" # Testnet P2P port
+      - "8332:8332"   # RPC (restrict on firewall in prod)
+      - "8333:8333"   # P2P
+      - "18332:18332" # Testnet RPC
+      - "18333:18333" # Testnet P2P
     volumes:
       - bitcoin-data:/data
       - ./bitcoin/bitcoin.conf:/data/bitcoin.conf:ro
@@ -19,15 +22,14 @@ services:
       - BITCOIN_RPC_USER=${BITCOIN_RPC_USER:-bitcoinrpc}
       - BITCOIN_RPC_PASSWORD=${BITCOIN_RPC_PASSWORD}
       - BITCOIN_NETWORK=${BITCOIN_NETWORK:-mainnet}
-    # user: "1000:1000"  # Commented out to avoid permission issues
     command: [
-      "bitcoind", 
-      "-datadir=/data", 
-      "-printtoconsole", 
+      "bitcoind",
+      "-datadir=/data",
+      "-printtoconsole",
       "-server=1",
       "-rpcuser=${BITCOIN_RPC_USER:-bitcoinrpc}",
       "-rpcpassword=${BITCOIN_RPC_PASSWORD}",
-      "-rpcallowip=0.0.0.0/0",
+      "-rpcallowip=0.0.0.0/0",               # tighten to your LAN/CIDR in prod
       "-rpcbind=0.0.0.0:8332"
     ]
     healthcheck:
@@ -35,7 +37,7 @@ services:
       interval: 30s
       timeout: 15s
       retries: 10
-      start_period: 120s  # Give more time for initial startup
+      start_period: 120s
     networks:
       - bitcoin-network
     logging:
@@ -47,11 +49,15 @@ services:
       resources:
         limits:
           memory: ${BITCOIN_MEMORY_LIMIT:-16g}
-          cpus: '${BITCOIN_CPU_LIMIT:-4.0}'
+          cpus: "${BITCOIN_CPU_LIMIT:-4.0}"
         reservations:
           memory: 4g
-          cpus: '2.0'
+          cpus: "2.0"
 
+
+  # =========================
+  # Fractal-Bitcoin (FB)
+  # =========================
   fractal-bitcoin:
     build:
       context: ./fractal-bitcoin/docker
@@ -60,8 +66,8 @@ services:
     container_name: fractal-bitcoin-core
     restart: unless-stopped
     ports:
-      - "8434:8434"   # Fractal RPC port
-      - "8435:8435"   # Fractal P2P port
+      - "8434:8434"   # RPC (restrict on firewall or remove for local-only)
+      - "8435:8435"   # P2P
     volumes:
       - fractal-data:/data
       - ./fractal-bitcoin/fractal.conf:/data/fractal.conf:ro
@@ -76,17 +82,76 @@ services:
       "-server=1",
       "-rpcuser=${FRACTAL_RPC_USER:-fractalrpc}",
       "-rpcpassword=${FRACTAL_RPC_PASSWORD}",
-      "-rpcallowip=0.0.0.0/0",
+      "-rpcallowip=0.0.0.0/0",               # tighten to your LAN/CIDR in prod
       "-rpcbind=0.0.0.0:8434",
       "-port=8435"
     ]
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-datadir=/data", "-rpcuser=${FRACTAL_RPC_USER:-fractalrpc}", "-rpcpassword=${FRACTAL_RPC_PASSWORD}", "-getinfo"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
     networks:
       - bitcoin-network
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # ==================================================
+  # Public-Pool (Solo/Permissionless) for Fractal-BTC
+  # ==================================================
+  public-pool-fb:
+    build:
+      context: ./public-pool
+      dockerfile: Dockerfile
+    image: public-pool:latest
+    container_name: public-pool-fb
+    restart: unless-stopped
+    depends_on:
+      fractal-bitcoin:
+        condition: service_healthy
+    # Stratum + HTTP API exposed to LAN/Internet; firewall accordingly
+    ports:
+      - "3333:3333/tcp"   # Stratum port miners connect to
+      - "3334:3334/tcp"   # HTTP API (and for separate UI if you add it)
+    environment:
+      # ----- Core RPC wiring (point at Fractal daemon) -----
+      BITCOIN_RPC_URL: http://fractal-bitcoin
+      BITCOIN_RPC_USER: ${FRACTAL_RPC_USER:-fractalrpc}
+      BITCOIN_RPC_PASSWORD: ${FRACTAL_RPC_PASSWORD}
+      BITCOIN_RPC_PORT: "8434"
+      # ----- ZMQ feed from Fractal rawblock publisher -----
+      BITCOIN_ZMQ_HOST: tcp://fractal-bitcoin:28432
+      # ----- Public-Pool service ports -----
+      STRATUM_PORT: "3333"
+      API_PORT: "3334"
+      # ----- Optional: brand your coinbase tag -----
+      POOL_IDENTIFIER: ${POOL_IDENTIFIER:-YourPool}
+      # Optional toggles you can add later:
+      # API_SECURE: "false"
+      # NETWORK: "mainnet"
+      # BITCOIN_RPC_TIMEOUT: "10000"
+    networks:
+      - bitcoin-network
+    # If you prefer to supply a .env file instead, uncomment the next line:
+    # env_file: ./public-pool/.env
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: "1g"
 
 networks:
   bitcoin-network:
     driver: bridge
-    # Automatic IP assignment to avoid conflicts
     driver_opts:
       com.docker.network.bridge.name: bitcoin-br0
 
