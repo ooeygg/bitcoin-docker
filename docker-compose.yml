@@ -1,5 +1,38 @@
 services:
   # =========================
+  # Reverse proxy + TLS
+  # =========================
+  traefik:
+    image: traefik:v2.11
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.stratum.address=:3335/tcp
+      - --certificatesresolvers.le.acme.email=${TRAEFIK_ACME_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+      - --certificatesresolvers.le.acme.httpchallenge=true
+      - --certificatesresolvers.le.acme.httpchallenge.entrypoint=web
+      - --api=false
+      - --log.level=INFO
+    ports:
+      - "80:80"       # ACME HTTP-01 + redirect
+      - "443:443"     # HTTPS for API
+      - "3335:3335"   # Stratum over TLS
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-acme:/letsencrypt
+    networks: [public]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+
+  # =========================
   # Bitcoin Core (Full Node)
   # =========================
   bitcoin:
@@ -9,11 +42,9 @@ services:
     image: bitcoin:latest
     container_name: bitcoin-core
     restart: unless-stopped
+    # Public: ONLY P2P
     ports:
-      - "8332:8332"   # RPC (restrict on firewall in prod)
       - "8333:8333"   # P2P
-      - "18332:18332" # Testnet RPC
-      - "18333:18333" # Testnet P2P
     volumes:
       - bitcoin-data:/data
       - ./bitcoin/bitcoin.conf:/data/bitcoin.conf:ro
@@ -29,7 +60,7 @@ services:
       "-server=1",
       "-rpcuser=${BITCOIN_RPC_USER:-bitcoinrpc}",
       "-rpcpassword=${BITCOIN_RPC_PASSWORD}",
-      "-rpcallowip=0.0.0.0/0",               # tighten to your LAN/CIDR in prod
+      "-rpcallowip=172.16.0.0/12",       # Docker subnets only
       "-rpcbind=0.0.0.0:8332"
     ]
     healthcheck:
@@ -38,13 +69,15 @@ services:
       timeout: 15s
       retries: 10
       start_period: 120s
-    networks:
-      - bitcoin-network
+    networks: [backend]
     logging:
       driver: json-file
-      options:
-        max-size: "100m"
-        max-file: "3"
+      options: { max-size: "100m", max-file: "3" }
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
     deploy:
       resources:
         limits:
@@ -53,7 +86,6 @@ services:
         reservations:
           memory: 4g
           cpus: "2.0"
-
 
   # =========================
   # Fractal-Bitcoin (FB)
@@ -65,8 +97,8 @@ services:
     image: fractal-bitcoin:latest
     container_name: fractal-bitcoin-core
     restart: unless-stopped
+    # Public: ONLY P2P
     ports:
-      - "8434:8434"   # RPC (restrict on firewall or remove for local-only)
       - "8435:8435"   # P2P
     volumes:
       - fractal-data:/data
@@ -80,9 +112,10 @@ services:
       "-datadir=/data",
       "-printtoconsole",
       "-server=1",
+      "-conf=/data/fractal.conf",        # load ZMQ + settings
       "-rpcuser=${FRACTAL_RPC_USER:-fractalrpc}",
       "-rpcpassword=${FRACTAL_RPC_PASSWORD}",
-      "-rpcallowip=0.0.0.0/0",               # tighten to your LAN/CIDR in prod
+      "-rpcallowip=172.16.0.0/12",       # Docker subnets only
       "-rpcbind=0.0.0.0:8434",
       "-port=8435"
     ]
@@ -92,16 +125,18 @@ services:
       timeout: 15s
       retries: 10
       start_period: 120s
-    networks:
-      - bitcoin-network
+    networks: [backend]
     logging:
       driver: json-file
-      options:
-        max-size: "100m"
-        max-file: "3"
+      options: { max-size: "100m", max-file: "3" }
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
 
   # ==================================================
-  # Public-Pool (Solo/Permissionless) for Fractal-BTC
+  # Public-Pool (FB) — behind Traefik (TLS)
   # ==================================================
   public-pool-fb:
     build:
@@ -113,36 +148,49 @@ services:
     depends_on:
       fractal-bitcoin:
         condition: service_healthy
-    # Stratum + HTTP API exposed to LAN/Internet; firewall accordingly
-    ports:
-      - "3333:3333/tcp"   # Stratum port miners connect to
-      - "3334:3334/tcp"   # HTTP API (and for separate UI if you add it)
+    # No direct ports — exposed via Traefik
     environment:
-      # ----- Core RPC wiring (point at Fractal daemon) -----
+      # Core RPC (internal)
       BITCOIN_RPC_URL: http://fractal-bitcoin
       BITCOIN_RPC_USER: ${FRACTAL_RPC_USER:-fractalrpc}
       BITCOIN_RPC_PASSWORD: ${FRACTAL_RPC_PASSWORD}
       BITCOIN_RPC_PORT: "8434"
-      # ----- ZMQ feed from Fractal rawblock publisher -----
+      # ZMQ
       BITCOIN_ZMQ_HOST: tcp://fractal-bitcoin:28432
-      # ----- Public-Pool service ports -----
+      # Internal listen (Traefik will route to these)
       STRATUM_PORT: "3333"
       API_PORT: "3334"
-      # ----- Optional: brand your coinbase tag -----
       POOL_IDENTIFIER: ${POOL_IDENTIFIER:-YourPool}
-      # Optional toggles you can add later:
-      # API_SECURE: "false"
-      # NETWORK: "mainnet"
-      # BITCOIN_RPC_TIMEOUT: "10000"
-    networks:
-      - bitcoin-network
-    # If you prefer to supply a .env file instead, uncomment the next line:
-    # env_file: ./public-pool/.env
+      # API_SECURE can stay false internally; Traefik terminates TLS
+      API_SECURE: "false"
+    labels:
+      - "traefik.enable=true"
+
+      # HTTPS API on https://$POOL_API_DOMAIN
+      - "traefik.http.routers.pool-api.rule=Host(`${POOL_API_DOMAIN}`)"
+      - "traefik.http.routers.pool-api.entrypoints=websecure"
+      - "traefik.http.routers.pool-api.tls.certresolver=le"
+      - "traefik.http.services.pool-api.loadbalancer.server.port=3334"
+
+      # TCP Stratum+TLS on stratum.$POOL_STRATUM_DOMAIN:3335
+      - "traefik.tcp.routers.stratum.rule=HostSNI(`${POOL_STRATUM_DOMAIN}`)"
+      - "traefik.tcp.routers.stratum.entrypoints=stratum"
+      - "traefik.tcp.routers.stratum.tls=true"
+      - "traefik.tcp.routers.stratum.tls.certresolver=le"
+      - "traefik.tcp.services.stratum.loadbalancer.server.port=3333"
+    networks: [backend, public]
     logging:
       driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "3"
+      options: { max-size: "50m", max-file: "3" }
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     deploy:
       resources:
         limits:
@@ -150,10 +198,10 @@ services:
           memory: "1g"
 
 networks:
-  bitcoin-network:
+  backend:
     driver: bridge
-    driver_opts:
-      com.docker.network.bridge.name: bitcoin-br0
+  public:
+    driver: bridge
 
 volumes:
   bitcoin-data:
@@ -162,10 +210,11 @@ volumes:
       type: none
       o: bind
       device: ${PWD}/bitcoin/data
-
   fractal-data:
     driver: local
     driver_opts:
       type: none
       o: bind
       device: ${PWD}/fractal-bitcoin/data
+  traefik-acme:
+    driver: local
