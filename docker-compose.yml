@@ -205,16 +205,10 @@ networks:
 
 volumes:
   bitcoin-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/bitcoin/data
+    external: true
+    name: bitcoin-stack_bitcoin-data
   fractal-data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${PWD}/fractal-bitcoin/data
+    external: true
+    name: bitcoin-stack_fractal-data
   traefik-acme:
     driver: local
